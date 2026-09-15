@@ -11,7 +11,21 @@ from scoring import evaluate_property
 from finance import calculate_financials
 
 
-DB_PATH = Path(__file__).parent / "piso_hunter.db"
+import os
+import shutil
+
+SOURCE_DB_PATH = Path(__file__).parent / "piso_hunter.db"
+
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    DB_PATH = Path("/tmp/piso_hunter.db")
+    if not DB_PATH.exists() and SOURCE_DB_PATH.exists():
+        try:
+            shutil.copy2(SOURCE_DB_PATH, DB_PATH)
+        except Exception as e:
+            print(f"Warning copying DB to /tmp: {e}")
+            DB_PATH = SOURCE_DB_PATH
+else:
+    DB_PATH = SOURCE_DB_PATH
 
 def get_db():
     conn = sqlite3.connect(str(DB_PATH))
