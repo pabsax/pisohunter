@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "PisoHunter Idealista Sync",
+  "version": "1.0.0",
+  "description": "Sincroniza búsquedas completas de Idealista con PisoHunter en un solo clic.",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://www.idealista.com/*",
+    "http://localhost:8000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.idealista.com/venta-viviendas/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
