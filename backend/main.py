@@ -351,14 +351,56 @@ def get_purchasing_power(
     )
 
 # --- SERVIR FRONTEND SPA Y PWA ---
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+static_dir = Path(__file__).parent / "static"
+if not static_dir.exists():
+    static_dir = Path(__file__).parent.parent / "frontend" / "dist"
+
+if static_dir.exists():
+    if (static_dir / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+    @app.get("/")
+    def serve_root():
+        index_path = static_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return {"status": "ok", "app": "PisoHunter Albacete"}
+
+    @app.get("/manifest.json")
+    def get_manifest():
+        p = static_dir / "manifest.json"
+        if p.exists():
+            return FileResponse(p, media_type="application/manifest+json")
+        raise HTTPException(status_code=404)
+
+    @app.get("/favicon.svg")
+    def get_favicon():
+        p = static_dir / "favicon.svg"
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+        raise HTTPException(status_code=404)
+
+    @app.get("/logo.svg")
+    def get_logo():
+        p = static_dir / "logo.svg"
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+        raise HTTPException(status_code=404)
+
+    @app.get("/icons.svg")
+    def get_icons():
+        p = static_dir / "icons.svg"
+        if p.exists():
+            return FileResponse(p, media_type="image/svg+xml")
+        raise HTTPException(status_code=404)
 
     @app.get("/{full_path:path}")
     def serve_frontend_spa(full_path: str):
-        file_path = frontend_dist / full_path
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        file_path = static_dir / full_path
         if file_path.is_file():
             return FileResponse(file_path)
-        return FileResponse(frontend_dist / "index.html")
+        return FileResponse(static_dir / "index.html")
+
 
