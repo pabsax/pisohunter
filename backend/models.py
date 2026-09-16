@@ -5,12 +5,14 @@ import uuid
 
 class UserCriteria(BaseModel):
     max_budget: float = 170000.0
+    min_budget: float = 65000.0
     savings_available: float = 65000.0
     clm_itp_percent: float = 9.0
     min_rooms: int = 1
     preferred_rooms: int = 2
     blacklisted_neighborhoods: List[str] = [
-        "las 600", "la milagrosa", "el congo", "churruca", "sector 3", "cerro de san blas"
+        "las 600", "la milagrosa", "el congo", "churruca", "sector 3", 
+        "cerro de san blas", "calle de burgos", "calle burgos", "los pintores"
     ]
     require_elevator: bool = True
     desire_garage: bool = True

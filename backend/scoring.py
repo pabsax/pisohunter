@@ -45,9 +45,15 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 def check_disqualifying_factors(prop: Property, criteria: UserCriteria) -> Tuple[bool, str]:
-    # 1. Comprobación de precio sospechoso / anormalmente bajo (< 45.000 €)
-    if prop.price and prop.price < 45000:
-        return True, f"Precio anormalmente bajo ({int(prop.price):,} € < 45.000 €). Descartado por alta sospecha de okupación, ruina estructural o cargas judiciales."
+    # 1. Comprobación de precio sospechoso / anormalmente bajo (< 65.000 €)
+    min_price_threshold = getattr(criteria, "min_budget", 65000.0) or 65000.0
+    if prop.price and prop.price < min_price_threshold:
+        return True, f"Precio anormalmente bajo ({int(prop.price):,} € < {int(min_price_threshold):,} €). En Albacete capital indica edificio muy deteriorado, zona marginal o problemas jurídicos/estructurales."
+
+    norm_title = normalize_text(prop.title)
+    # Detectar anuncios de alquiler colados en venta (ej. 'alquila apartamento', 'en alquiler')
+    if re.search(r'\b(alquila|se alquila|en alquiler|alquiler de|alquiler temporal)\b', norm_title):
+        return True, "Anuncio de alquiler clasificado erróneamente como venta."
 
     searchable_text = normalize_text(f"{prop.title} {prop.neighborhood} {prop.address or ''} {prop.description or ''}")
 
@@ -75,14 +81,25 @@ def check_disqualifying_factors(prop: Property, criteria: UserCriteria) -> Tuple
     # 4. Inmueble Alquilado con Inquilino Dentro
     rented_keywords = [
         "inmueble alquilado", "piso alquilado", "vivienda alquilada",
-        "con inquilino", "con contrato de alquiler", "arrendado actualmente",
-        "rentabilidad asegurada", "contrato de alquiler en vigor", "pago asegurado"
+        "con inquilino", "con inquilina", "con inquilinos", "inquilino actual",
+        "inquilina actual", "actualmente alquilado", "actualmente alquilada",
+        "se encuentra alquilado", "se encuentra alquilada", "alquilado a",
+        "alquilada a", "con contrato de alquiler", "contrato de alquiler en vigor",
+        "contrato de arrendamiento", "arrendado actualmente", "actualmente arrendado",
+        "en regimen de arrendamiento", "arrendatario", "arrendataria",
+        "rentabilidad asegurada", "inversion con rentabilidad", "renta mensual asegurada",
+        "percibiendo renta", "renta actual", "inversion con inquilino"
     ]
     for kw in rented_keywords:
         if kw in searchable_text:
             return True, f"Piso alquilado con inquilino ('{kw}'). No disponible para residencia propia."
 
-    # 5. Barrios vetados (Las 600, El Congo, Churruca, etc.)
+    # Búsqueda regex de mención a inquilinos en la descripción
+    if re.search(r'\b(inquilin[ao]s?|arrendatari[ao]s?)\b', searchable_text):
+        if not re.search(r'\b(sin|libre de) (inquilin[ao]s?|arrendatari[ao]s?)\b', searchable_text):
+            return True, "Presencia de inquilino o arrendatario detectada en el anuncio. No apto para entrar a vivir."
+
+    # 5. Barrios y calles vetadas (Las 600, El Congo, Churruca, Calle Burgos, etc.)
     for banned in criteria.blacklisted_neighborhoods:
         banned_norm = normalize_text(banned)
         if re.search(r'\b' + re.escape(banned_norm) + r'\b', searchable_text) or banned_norm in searchable_text:

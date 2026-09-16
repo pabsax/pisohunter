@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Link2, Sparkles, Building2, Car, Bed, Bath, Plus, Image } from 'lucide-react';
 
 export default function AddPropertyModal({ onClose, onAddProperty }) {
@@ -6,6 +6,14 @@ export default function AddPropertyModal({ onClose, onAddProperty }) {
   const [url, setUrl] = useState('');
   const [parsing, setParsing] = useState(false);
   const [warningMsg, setWarningMsg] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -82,25 +90,35 @@ export default function AddPropertyModal({ onClose, onAddProperty }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+    <div 
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[90vh] sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+      >
         
         {/* Cabecera */}
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/90 sticky top-0 z-10">
-          <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-emerald-400" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 truncate">
+              <Plus className="w-5 h-5 text-emerald-400 shrink-0" />
               <span>Añadir Inmueble a PisoHunter</span>
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 truncate">
               Pega el enlace de Idealista/Fotocasa o escribe los datos del piso
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+            className="p-2 sm:p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition shrink-0 active:scale-95 touch-manipulation"
+            aria-label="Cerrar modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 

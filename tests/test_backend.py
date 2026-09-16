@@ -122,4 +122,80 @@ def test_api_endpoints():
         assert sim["itp_tax"] == 13500.0
         assert sim["is_solvent"] is True
 
+def test_anti_rent_and_tenant_detection():
+    criteria = UserCriteria()
+    
+    # Inquilina mencionada
+    prop_tenant = Property(
+        title="Piso en Ensanche",
+        neighborhood="Ensanche",
+        price=140000.0,
+        description="Se vende piso muy luminoso. Los muebles se los llevará la inquilina antes de la firma."
+    )
+    score_tenant = evaluate_property(prop_tenant, criteria)
+    assert score_tenant.is_blacklisted is True
+    assert score_tenant.total_score == 0.0
+
+    # Actualmente alquilado
+    prop_rented = Property(
+        title="Apartamento centrico",
+        neighborhood="Centro",
+        price=130000.0,
+        description="Excelente inversión, actualmente alquilado a una sola persona con renta demostrable."
+    )
+    score_rented = evaluate_property(prop_rented, criteria)
+    assert score_rented.is_blacklisted is True
+    assert score_rented.total_score == 0.0
+
+    # Título que es anuncio de alquiler
+    prop_ad_rent = Property(
+        title="INMOBILIARIA alquila apartamento totalmente amueblado",
+        neighborhood="Estacion",
+        price=120000.0
+    )
+    score_ad_rent = evaluate_property(prop_ad_rent, criteria)
+    assert score_ad_rent.is_blacklisted is True
+    assert score_ad_rent.total_score == 0.0
+
+def test_cheap_and_calle_burgos_filtering():
+    criteria = UserCriteria()
+
+    # Piso < 65k (ejemplo el de 60k en Calle Burgos)
+    prop_cheap = Property(
+        title="Piso en calle de Burgos",
+        neighborhood="Hospital-Parque Sur",
+        price=60000.0
+    )
+    score_cheap = evaluate_property(prop_cheap, criteria)
+    assert score_cheap.is_blacklisted is True
+    assert score_cheap.total_score == 0.0
+    assert "anormalmente bajo" in score_cheap.blacklist_reason or "calle burgos" in score_cheap.blacklist_reason.lower()
+
+def test_deduplication_engine():
+    from database import properties_are_duplicates
+
+    p1 = Property(
+        id="uuid-1",
+        title="Piso en Carretas",
+        neighborhood="Carretas",
+        price=110000.0,
+        rooms=3,
+        area_m2=90.0,
+        has_elevator=True,
+        photos=["https://cdn.example.com/photo123.jpg"]
+    )
+    p2 = Property(
+        id="uuid-2",
+        title="Graciano Inmobiliaria vende piso en Carretas",
+        neighborhood="Carretas - Pajarita",
+        price=110000.0,
+        rooms=3,
+        area_m2=90.0,
+        has_elevator=True,
+        photos=["https://cdn.example.com/photo123.jpg?w=800"]
+    )
+
+    assert properties_are_duplicates(p1, p2) is True
+
+
 

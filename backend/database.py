@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import re
 import sys
 from typing import List, Optional, Dict, Any
 from pathlib import Path
@@ -215,7 +216,130 @@ def get_property_by_id(property_id: str) -> Optional[Property]:
             return row_to_property(row)
         return None
 
+def normalize_comp_text(text: str) -> str:
+    if not text:
+        return ""
+    text = text.lower()
+    for a, b in [('á','a'),('é','e'),('í','i'),('ó','o'),('ú','u'),('ñ','n'),('-',' '),('/',' '),('.',' ')]:
+        text = text.replace(a, b)
+    return text.strip()
+
+def properties_are_duplicates(p1: Property, p2: Property) -> bool:
+    if p1.id == p2.id:
+        return True
+    if p1.url and p2.url and p1.url.strip() == p2.url.strip():
+        return True
+    
+    price_diff = abs(p1.price - p2.price)
+    area_diff = abs(p1.area_m2 - p2.area_m2)
+    rooms_match = (p1.rooms == p2.rooms)
+    
+    if price_diff <= 2000 and area_diff <= 4.0 and rooms_match:
+        t1 = normalize_comp_text(f"{p1.title} {p1.neighborhood} {p1.address or ''}")
+        t2 = normalize_comp_text(f"{p2.title} {p2.neighborhood} {p2.address or ''}")
+        
+        # Photo match
+        if p1.photos and p2.photos:
+            p1_first = p1.photos[0].split('?')[0].split('/')[-1]
+            p2_first = p2.photos[0].split('?')[0].split('/')[-1]
+            if p1_first and p2_first and p1_first == p2_first:
+                return True
+                
+        # Street match
+        st1 = re.findall(r'\b(calle|avda|avenida|plaza|paseo)\s+([a-z0-9\s]+?)(?:,|\.|$)', t1)
+        st2 = re.findall(r'\b(calle|avda|avenida|plaza|paseo)\s+([a-z0-9\s]+?)(?:,|\.|$)', t2)
+        if st1 and st2:
+            s1_name = st1[0][1].strip()[:10]
+            s2_name = st2[0][1].strip()[:10]
+            if s1_name and s2_name and (s1_name in s2_name or s2_name in s1_name):
+                return True
+                
+        n1 = normalize_comp_text(p1.neighborhood)
+        n2 = normalize_comp_text(p2.neighborhood)
+        if n1 and n2 and (n1 in n2 or n2 in n1):
+            if p1.has_elevator == p2.has_elevator:
+                if price_diff == 0 and area_diff == 0:
+                    return True
+                w1 = set(t1.split())
+                w2 = set(t2.split())
+                if len(w1.intersection(w2)) >= 3:
+                    return True
+                    
+        if price_diff == 0 and area_diff == 0 and p1.has_elevator == p2.has_elevator:
+            if t1[:20] in t2 or t2[:20] in t1:
+                return True
+            w1 = set(t1.split())
+            w2 = set(t2.split())
+            if len(w1.intersection(w2)) >= 4:
+                return True
+    return False
+
+def find_duplicate_property(prop: Property) -> Optional[Property]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Find candidates with close price and same rooms
+        cursor.execute(
+            "SELECT * FROM properties WHERE ABS(price - ?) <= 2500 AND rooms = ?",
+            (prop.price, prop.rooms)
+        )
+        candidates = [row_to_property(r) for r in cursor.fetchall()]
+        for c in candidates:
+            if c.id != prop.id and properties_are_duplicates(prop, c):
+                return c
+        if prop.url:
+            cursor.execute("SELECT * FROM properties WHERE url = ? AND id != ?", (prop.url, prop.id))
+            r = cursor.fetchone()
+            if r:
+                return row_to_property(r)
+    return None
+
+def deduplicate_database() -> int:
+    """Elimina inmuebles duplicados en la base de datos conservando la mejor versión."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM properties ORDER BY score DESC, price ASC")
+        rows = [row_to_property(r) for r in cursor.fetchall()]
+        
+        kept: List[Property] = []
+        to_delete_ids = []
+        
+        for p in rows:
+            is_dup = False
+            for k in kept:
+                if properties_are_duplicates(p, k):
+                    is_dup = True
+                    # Preservar notas de usuario o estado si p fue interactuado
+                    if p.user_notes and not k.user_notes:
+                        k.user_notes = p.user_notes
+                    if p.status in ("guardado", "en_visita", "interesante", "oferta") and k.status == "nuevo":
+                        k.status = p.status
+                        k.discard_reason = p.discard_reason
+                    # Preferir fotos de mayor calidad o mayor cantidad
+                    if len(p.photos) > len(k.photos):
+                        k.photos = p.photos
+                    to_delete_ids.append(p.id)
+                    break
+            if not is_dup:
+                kept.append(p)
+                
+        for did in to_delete_ids:
+            cursor.execute("DELETE FROM properties WHERE id = ?", (did,))
+            
+        conn.commit()
+        return len(to_delete_ids)
+
 def save_property(prop: Property) -> Property:
+    # 1. Comprobar si es un duplicado de un inmueble ya existente
+    existing = find_duplicate_property(prop)
+    if existing:
+        prop.id = existing.id
+        if existing.status in ("guardado", "en_visita", "interesante", "oferta", "descartado"):
+            prop.status = existing.status
+            prop.discard_reason = existing.discard_reason
+            prop.user_notes = existing.user_notes or prop.user_notes
+        if len(existing.photos) > len(prop.photos):
+            prop.photos = existing.photos
+
     criteria = get_user_criteria() or UserCriteria()
     
     # Recalcular score y finanzas automáticamente

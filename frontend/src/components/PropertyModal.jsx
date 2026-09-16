@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, ExternalLink, Bookmark, MapPin, Building, 
   Car, Bed, Bath, Maximize2, Check, AlertCircle 
 } from 'lucide-react';
+import { getPortalLabel } from '../utils/formatters';
 
 export default function PropertyModal({ 
   property, 
@@ -11,6 +12,17 @@ export default function PropertyModal({
   onToggleFavorite 
 }) {
   const [selectedPhoto, setSelectedPhoto] = useState(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const photos = property.photos && property.photos.length > 0 
     ? property.photos 
     : ['https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&auto=format&fit=crop&q=80'];
@@ -20,32 +32,38 @@ export default function PropertyModal({
   const breakdown = property.score_breakdown;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+    <div 
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+    >
       <div 
-        className="bg-[#111217] border border-white/10 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+        className="bg-[#111217] border border-white/10 rounded-2xl sm:rounded-3xl w-full max-w-3xl max-h-[90vh] sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between gap-4 bg-[#111217]/90 sticky top-0 z-10">
-          <div>
-            <div className="flex items-baseline gap-3">
-              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-white/[0.08] flex items-center justify-between gap-2 sm:gap-4 bg-[#111217]/95 backdrop-blur sticky top-0 z-10">
+          <div className="min-w-0 flex-1 pr-1 sm:pr-2">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <span className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white whitespace-nowrap">
                 {property.price.toLocaleString()} €
               </span>
-              <span className="text-xs text-zinc-400 font-medium">
+              <span className="text-xs text-zinc-400 font-medium truncate max-w-[140px] sm:max-w-none">
                 {property.neighborhood}, Albacete
               </span>
             </div>
-            <p className="text-xs text-zinc-400 truncate max-w-lg mt-0.5">
+            <p className="text-xs text-zinc-400 truncate max-w-lg mt-0.5 hidden sm:block">
               {property.title}
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
             <button
+              type="button"
               onClick={() => onToggleFavorite(property.id)}
-              className={`p-2 rounded-xl border transition ${
+              className={`p-2 sm:p-2.5 rounded-xl border transition ${
                 isFavorite 
                   ? 'bg-white text-zinc-950 border-white' 
                   : 'bg-zinc-900 text-zinc-300 hover:text-white border-white/10'
@@ -56,8 +74,10 @@ export default function PropertyModal({
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-white/10 transition"
+              className="p-2 sm:p-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 transition active:scale-95 touch-manipulation"
+              aria-label="Cerrar modal"
             >
               <X className="w-4 h-4" />
             </button>
@@ -99,8 +119,8 @@ export default function PropertyModal({
             <div className="p-4 rounded-2xl bg-zinc-900/60 border border-white/[0.08] flex items-center justify-between gap-4">
               <div>
                 <span className="text-xs text-zinc-400 block font-medium">Fuente del anuncio:</span>
-                <span className="text-sm font-semibold text-white capitalize">
-                  {property.source === 'habitaclia' ? 'Habitaclia / Fotocasa' : 'Pisos.com'}
+                <span className="text-sm font-semibold text-white">
+                  {getPortalLabel(property.source)}
                 </span>
               </div>
               <a

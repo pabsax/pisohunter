@@ -16,7 +16,7 @@ from database import (
     init_db, get_all_properties, get_property_by_id, save_property,
     delete_property, update_property_status, get_visit_checklist,
     save_visit_checklist, get_user_criteria, save_user_criteria,
-    recalculate_all_scores
+    recalculate_all_scores, deduplicate_database
 )
 from scoring import evaluate_property
 from finance import calculate_financials, calculate_purchasing_power
@@ -30,6 +30,11 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    try:
+        deduplicate_database()
+        recalculate_all_scores()
+    except Exception as e:
+        print(f"Startup deduplication warning: {e}")
     yield
 
 app = FastAPI(
@@ -104,6 +109,12 @@ def remove_property(property_id: str):
         raise HTTPException(status_code=404, detail="Inmueble no encontrado")
     delete_property(property_id)
     return {"message": "Propiedad eliminada", "id": property_id}
+
+@app.post("/api/properties/deduplicate")
+def trigger_deduplicate():
+    removed_count = deduplicate_database()
+    recalculate_all_scores()
+    return {"status": "ok", "removed_duplicates": removed_count}
 
 # --- INGESTA Y SCRAPING ---
 

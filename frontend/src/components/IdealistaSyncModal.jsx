@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, ExternalLink, Zap } from 'lucide-react';
 
 export default function IdealistaSyncModal({ isOpen, onClose, onImportSuccess }) {
@@ -6,6 +6,15 @@ export default function IdealistaSyncModal({ isOpen, onClose, onImportSuccess })
   const [manualUrl, setManualUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -53,29 +62,39 @@ export default function IdealistaSyncModal({ isOpen, onClose, onImportSuccess })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#111217] border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+    <div 
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
+    >
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-[#111217] border border-white/10 rounded-2xl sm:rounded-3xl max-w-xl w-full p-4 sm:p-7 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
+      >
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
-          <div className="flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold text-sm">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold text-sm shrink-0">
               ⚡
             </span>
-            <div>
-              <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">
                 Sincronización con Idealista
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-zinc-400 truncate">
                 Importa 30 pisos de golpe sin meterlos uno a uno
               </p>
             </div>
           </div>
           <button 
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition"
+            className="p-2 sm:p-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition shrink-0 active:scale-95 touch-manipulation"
+            aria-label="Cerrar modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 

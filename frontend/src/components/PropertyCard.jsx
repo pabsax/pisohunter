@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, Bookmark, Building, Car, MapPin } from 'lucide-react';
+import { getPortalLabel } from '../utils/formatters';
 
 export default function PropertyCard({ 
   property, 
@@ -120,7 +121,7 @@ export default function PropertyCard({
         {/* Footer: Direct Portal Link */}
         <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
           <span className="text-[11px] text-zinc-400">
-            {property.source === 'habitaclia' ? 'Anuncio en Habitaclia' : 'Anuncio en Pisos.com'}
+            {getPortalLabel(property.source)}
           </span>
 
           {property.url && (
