@@ -72,11 +72,17 @@ class VisitChecklist(BaseModel):
     notes: Optional[str] = None
     would_buy: Optional[bool] = None
 
+class PortalListing(BaseModel):
+    portal: str  # fotocasa, pisos.com, idealista, habitaclia, manual
+    url: str
+    price: Optional[float] = None
+
 class Property(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     url: Optional[str] = None
     source: str = "manual"  # idealista, fotocasa, pisos.com, manual
+    portal_links: List[PortalListing] = []
     price: float
     original_price: Optional[float] = None
     price_history: List[PricePoint] = []

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from models import Property, VisitChecklist, UserCriteria
+from models import Property, VisitChecklist, UserCriteria, PortalListing
 from scoring import evaluate_property
 from finance import calculate_financials
 
@@ -70,6 +70,7 @@ def init_db():
             discard_reason TEXT,
             user_notes TEXT,
             is_favorite INTEGER DEFAULT 0,
+            portal_links TEXT DEFAULT '[]',
             score REAL DEFAULT 0.0,
             score_breakdown TEXT,
             financials TEXT,
@@ -78,9 +79,13 @@ def init_db():
         );
         """)
 
-        # Migración segura para columna is_favorite si la tabla ya existía
+        # Migración segura para columnas nuevas si la tabla ya existía
         try:
             cursor.execute("ALTER TABLE properties ADD COLUMN is_favorite INTEGER DEFAULT 0;")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE properties ADD COLUMN portal_links TEXT DEFAULT '[]';")
         except Exception:
             pass
         
@@ -174,6 +179,17 @@ def row_to_property(row: sqlite3.Row) -> Property:
         
     if d.get("financials"):
         d["financials"] = json.loads(d["financials"])
+
+    if d.get("portal_links"):
+        try:
+            d["portal_links"] = json.loads(d["portal_links"])
+        except Exception:
+            d["portal_links"] = []
+    else:
+        d["portal_links"] = []
+
+    if not d["portal_links"] and d.get("url"):
+        d["portal_links"] = [{"portal": d.get("source", "manual"), "url": d.get("url"), "price": d.get("price")}]
         
     return Property(**d)
 
@@ -305,6 +321,24 @@ def find_duplicate_property(prop: Property) -> Optional[Property]:
                 return row_to_property(r)
     return None
 
+def get_portal_ad_key(portal: str, url: str) -> str:
+    if not url:
+        return ""
+    p = (portal or "").lower()
+    if "fotocasa" in p:
+        m = re.search(r'/(\d+)/d', url)
+        if m:
+            return f"fotocasa_{m.group(1)}"
+    elif "pisos" in p:
+        m = re.search(r'-(\d+_\d+)/', url)
+        if m:
+            return f"pisos_{m.group(1)}"
+    elif "idealista" in p:
+        m = re.search(r'/inmueble/(\d+)/', url)
+        if m:
+            return f"idealista_{m.group(1)}"
+    return url.strip().rstrip('/')
+
 def deduplicate_database() -> int:
     """Elimina inmuebles duplicados en la base de datos conservando la mejor versión."""
     with get_db() as conn:
@@ -331,9 +365,40 @@ def deduplicate_database() -> int:
                     # Preferir fotos de mayor calidad o mayor cantidad
                     if len(p.photos) > len(k.photos):
                         k.photos = p.photos
+
+                    # Preservar y fusionar enlaces a todos los portales donde aparece el piso
+                    k_keys = {get_portal_ad_key(l.get("portal") if isinstance(l, dict) else l.portal, l.get("url") if isinstance(l, dict) else l.url) for l in (k.portal_links or [])}
+                    if not k.portal_links and k.url:
+                        k.portal_links = [{"portal": k.source, "url": k.url, "price": k.price}]
+                        k_keys.add(get_portal_ad_key(k.source, k.url))
+                    
+                    p_key = get_portal_ad_key(p.source, p.url)
+                    if p.url and p_key not in k_keys:
+                        k.portal_links.append({"portal": p.source, "url": p.url, "price": p.price})
+                        k_keys.add(p_key)
+                    for pl in (p.portal_links or []):
+                        pl_url = pl.get("url") if isinstance(pl, dict) else pl.url
+                        pl_portal = pl.get("portal") if isinstance(pl, dict) else pl.portal
+                        pl_key = get_portal_ad_key(pl_portal, pl_url)
+                        if pl_url and pl_key not in k_keys:
+                            k.portal_links.append(pl if isinstance(pl, dict) else pl.model_dump())
+                            k_keys.add(pl_key)
+
+                    cursor.execute("UPDATE properties SET portal_links = ? WHERE id = ?", (
+                        json.dumps([l if isinstance(l, dict) else l.model_dump() for l in k.portal_links]),
+                        k.id
+                    ))
+
                     to_delete_ids.append(p.id)
                     break
             if not is_dup:
+                # Asegurar que k tenga sus propios portal_links inicializados
+                if not p.portal_links and p.url:
+                    p.portal_links = [{"portal": p.source, "url": p.url, "price": p.price}]
+                    cursor.execute("UPDATE properties SET portal_links = ? WHERE id = ?", (
+                        json.dumps([l if isinstance(l, dict) else l.model_dump() for l in p.portal_links]),
+                        p.id
+                    ))
                 kept.append(p)
                 
         for did in to_delete_ids:
@@ -354,6 +419,33 @@ def save_property(prop: Property) -> Property:
             prop.user_notes = existing.user_notes or prop.user_notes
         if len(existing.photos) > len(prop.photos):
             prop.photos = existing.photos
+
+        # Fusionar portal_links
+        existing_links = list(existing.portal_links) if existing.portal_links else []
+        known_keys = {get_portal_ad_key(l.get("portal") if isinstance(l, dict) else l.portal, l.get("url") if isinstance(l, dict) else l.url) for l in existing_links}
+        if existing.url and get_portal_ad_key(existing.source, existing.url) not in known_keys:
+            existing_links.append({"portal": existing.source, "url": existing.url, "price": existing.price})
+            known_keys.add(get_portal_ad_key(existing.source, existing.url))
+        
+        p_key = get_portal_ad_key(prop.source, prop.url)
+        if prop.url and p_key not in known_keys:
+            existing_links.append({"portal": prop.source, "url": prop.url, "price": prop.price})
+            known_keys.add(p_key)
+        for pl in (prop.portal_links or []):
+            pl_url = pl.get("url") if isinstance(pl, dict) else pl.url
+            pl_portal = pl.get("portal") if isinstance(pl, dict) else pl.portal
+            pl_key = get_portal_ad_key(pl_portal, pl_url)
+            if pl_url and pl_key not in known_keys:
+                existing_links.append(pl if isinstance(pl, dict) else pl.model_dump())
+                known_keys.add(pl_key)
+        prop.portal_links = existing_links
+    else:
+        # Asegurar que prop.portal_links contiene al menos el enlace principal
+        if prop.url:
+            prop_keys = {get_portal_ad_key(l.get("portal") if isinstance(l, dict) else l.portal, l.get("url") if isinstance(l, dict) else l.url) for l in (prop.portal_links or [])}
+            p_key = get_portal_ad_key(prop.source, prop.url)
+            if p_key not in prop_keys:
+                prop.portal_links.append(PortalListing(portal=prop.source, url=prop.url, price=prop.price))
 
     criteria = get_user_criteria() or UserCriteria()
     
@@ -378,14 +470,14 @@ def save_property(prop: Property) -> Property:
             has_elevator, has_garage, has_terrace, has_balcony, has_ac,
             is_exterior, heating_type, condition, community_fee, description,
             photos, contact_phone, agency, status, discard_reason, user_notes,
-            is_favorite, score, score_breakdown, financials, created_at, updated_at
+            is_favorite, portal_links, score, score_breakdown, financials, created_at, updated_at
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?
         )
         """, (
             prop.id, prop.title, prop.url, prop.source, prop.price, prop.original_price,
@@ -396,7 +488,9 @@ def save_property(prop: Property) -> Property:
             1 if prop.is_exterior else 0, prop.heating_type, prop.condition, prop.community_fee,
             prop.description, json.dumps(prop.photos), prop.contact_phone, prop.agency,
             prop.status, prop.discard_reason, prop.user_notes,
-            1 if prop.is_favorite else 0, prop.score,
+            1 if prop.is_favorite else 0,
+            json.dumps([p.model_dump() if hasattr(p, 'model_dump') else p for p in prop.portal_links]),
+            prop.score,
             prop.score_breakdown.model_dump_json() if prop.score_breakdown else None,
             prop.financials.model_dump_json() if prop.financials else None,
             prop.created_at, prop.updated_at

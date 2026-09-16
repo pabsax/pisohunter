@@ -3,7 +3,7 @@ import {
   X, ExternalLink, Bookmark, MapPin, Building, 
   Car, Bed, Bath, Maximize2, Check, AlertCircle, FileText 
 } from 'lucide-react';
-import { getPortalLabel } from '../utils/formatters';
+import { getPortalLabel, getPortalName } from '../utils/formatters';
 
 export default function PropertyModal({ 
   property, 
@@ -49,6 +49,23 @@ export default function PropertyModal({
   const score = Math.round(property.score || 0);
   const financials = property.financials;
   const breakdown = property.score_breakdown;
+
+  // Consolidate portal listings without duplicate URLs
+  const rawLinks = (property.portal_links && property.portal_links.length > 0)
+    ? property.portal_links
+    : (property.url ? [{ portal: property.source || 'inmueble', url: property.url, price: property.price }] : []);
+
+  const uniquePortalLinks = [];
+  const seenUrls = new Set();
+  for (const pl of rawLinks) {
+    if (pl && pl.url && !seenUrls.has(pl.url)) {
+      seenUrls.add(pl.url);
+      uniquePortalLinks.push(pl);
+    }
+  }
+
+  const uniquePortals = Array.from(new Set(uniquePortalLinks.map(p => getPortalName(p.portal))));
+  const isMultiPortal = uniquePortals.length > 1;
 
   return (
     <div 
@@ -133,24 +150,42 @@ export default function PropertyModal({
             )}
           </div>
 
-          {/* Direct External Link - High Contrast & Prominent */}
-          {property.url && (
-            <div className="p-4 rounded-2xl bg-zinc-900/60 border border-white/[0.08] flex items-center justify-between gap-4">
-              <div>
-                <span className="text-xs text-zinc-400 block font-medium">Fuente del anuncio:</span>
-                <span className="text-sm font-semibold text-white">
-                  {getPortalLabel(property.source)}
+          {/* Direct External Links - Multi-portal support */}
+          {uniquePortalLinks.length > 0 && (
+            <div className="p-4 rounded-2xl bg-zinc-900/60 border border-white/[0.08] space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-400 font-medium">
+                    {isMultiPortal ? 'Anuncios en múltiples portales:' : 'Portal del anuncio:'}
+                  </span>
+                  {isMultiPortal && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[10px] font-semibold text-emerald-300">
+                      Mismo piso deduplicado
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] text-zinc-500">
+                  {uniquePortalLinks.length} {uniquePortalLinks.length === 1 ? 'enlace disponible' : 'enlaces disponibles'}
                 </span>
               </div>
-              <a
-                href={property.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs flex items-center gap-2 transition shadow-sm"
-              >
-                <span>Abrir anuncio original</span>
-                <ExternalLink className="w-3.5 h-3.5 text-zinc-700" />
-              </a>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {uniquePortalLinks.map((item, idx) => (
+                  <a
+                    key={idx}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-semibold text-xs flex items-center gap-2 transition shadow-sm"
+                  >
+                    <span>Ver en {getPortalName(item.portal)}</span>
+                    {item.price && item.price !== property.price && (
+                      <span className="text-zinc-600 font-normal">({item.price.toLocaleString()} €)</span>
+                    )}
+                    <ExternalLink className="w-3.5 h-3.5 text-zinc-700" />
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 

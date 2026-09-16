@@ -200,7 +200,8 @@ def test_deduplication_engine():
 def test_favorite_and_user_notes():
     from database import (
         save_property, get_property_by_id,
-        update_property_favorite, update_property_notes
+        update_property_favorite, update_property_notes,
+        get_db
     )
     test_p = Property(
         id="test-prop-notes-fav",
@@ -227,3 +228,52 @@ def test_favorite_and_user_notes():
     assert fetched is not None
     assert fetched.is_favorite is True
     assert fetched.user_notes == "Preguntar por derramas de tejado"
+    
+    with get_db() as conn:
+        conn.cursor().execute("DELETE FROM properties WHERE id = ?", ("test-prop-notes-fav",))
+        conn.commit()
+
+def test_portal_links_merge_on_duplicate():
+    from database import save_property, get_db
+    
+    # 1. First listing on Pisos.com
+    p_pisos = Property(
+        id="test-portal-merge-1",
+        title="Apartamento exclusivo en Altozano",
+        neighborhood="Centro",
+        price=135000.0,
+        rooms=2,
+        area_m2=70.0,
+        has_elevator=True,
+        source="pisos.com",
+        url="https://www.pisos.com/comprar/piso-altozano-99999_100500/"
+    )
+    saved1 = save_property(p_pisos)
+    assert len(saved1.portal_links) >= 1
+    assert saved1.portal_links[0].portal == "pisos.com"
+    
+    # 2. Duplicate listing on Fotocasa with same characteristics
+    p_fotocasa = Property(
+        id="test-portal-merge-2",
+        title="Apartamento exclusivo en Altozano",
+        neighborhood="Centro",
+        price=135000.0,
+        rooms=2,
+        area_m2=70.0,
+        has_elevator=True,
+        source="fotocasa",
+        url="https://www.fotocasa.es/es/comprar/vivienda/albacete/terraza/9999999/d"
+    )
+    saved2 = save_property(p_fotocasa)
+    
+    # Debe haber fusionado con el inmueble existente (mismo id)
+    assert saved2.id == saved1.id
+    portals = [l.get("portal") if isinstance(l, dict) else l.portal for l in saved2.portal_links]
+    assert "pisos.com" in portals
+    assert "fotocasa" in portals
+    
+    # Limpiar test row
+    with get_db() as conn:
+        conn.cursor().execute("DELETE FROM properties WHERE id = ?", (saved1.id,))
+        conn.commit()
+

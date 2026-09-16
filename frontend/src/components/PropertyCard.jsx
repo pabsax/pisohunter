@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExternalLink, Bookmark, Building, Car, MapPin, FileText } from 'lucide-react';
-import { getPortalLabel } from '../utils/formatters';
+import { getPortalLabel, getPortalName } from '../utils/formatters';
 
 export default function PropertyCard({ 
   property, 
@@ -15,6 +15,23 @@ export default function PropertyCard({
   const score = Math.round(property.score || 0);
   const priceM2 = property.area_m2 > 0 ? Math.round(property.price / property.area_m2) : null;
   const isDistant = score < 50 && (property.neighborhood.includes('Pedanías') || property.neighborhood.includes('Salobral'));
+
+  // Consolidate portal listings without duplicate URLs
+  const rawLinks = (property.portal_links && property.portal_links.length > 0)
+    ? property.portal_links
+    : (property.url ? [{ portal: property.source || 'inmueble', url: property.url, price: property.price }] : []);
+
+  const uniquePortalLinks = [];
+  const seenUrls = new Set();
+  for (const pl of rawLinks) {
+    if (pl && pl.url && !seenUrls.has(pl.url)) {
+      seenUrls.add(pl.url);
+      uniquePortalLinks.push(pl);
+    }
+  }
+
+  const uniquePortals = Array.from(new Set(uniquePortalLinks.map(p => getPortalName(p.portal))));
+  const isMultiPortal = uniquePortals.length > 1;
 
   return (
     <div 
@@ -32,10 +49,16 @@ export default function PropertyCard({
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
 
         {/* Source portal badge (Top-Left) */}
-        <div className="absolute top-3 left-3 flex items-center gap-1.5">
-          <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-medium text-zinc-300 tracking-wide capitalize">
-            {property.source || 'inmueble'}
-          </span>
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap max-w-[70%]">
+          {isMultiPortal ? (
+            <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 backdrop-blur-md border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 tracking-wide">
+              {uniquePortals.join(' + ')}
+            </span>
+          ) : (
+            <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-medium text-zinc-300 tracking-wide capitalize">
+              {uniquePortals[0] || property.source || 'inmueble'}
+            </span>
+          )}
           {isDistant && (
             <span className="px-2 py-0.5 rounded-full bg-red-950/80 backdrop-blur-md border border-red-500/30 text-[10px] font-semibold text-red-300">
               Lejos (+15km)
@@ -128,23 +151,34 @@ export default function PropertyCard({
           )}
         </div>
 
-        {/* Footer: Direct Portal Link */}
+        {/* Footer: Direct Portal Link(s) */}
         <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
           <span className="text-[11px] text-zinc-400">
-            {getPortalLabel(property.source)}
+            {isMultiPortal ? (
+              <span className="text-emerald-400/90 font-medium">Disponible en {uniquePortals.length} portales</span>
+            ) : (
+              getPortalLabel(uniquePortals[0] || property.source)
+            )}
           </span>
 
-          {property.url && (
-            <a
-              href={property.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-zinc-200 hover:text-white border border-white/10 text-xs font-medium flex items-center gap-1.5 transition-colors"
-            >
-              <span>Ver anuncio</span>
-              <ExternalLink className="w-3 h-3 text-zinc-400" />
-            </a>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {uniquePortalLinks.slice(0, 2).map((item, idx) => (
+              <a
+                key={idx}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-zinc-200 hover:text-white border border-white/10 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                title={`Ver en ${getPortalName(item.portal)}`}
+              >
+                <span>{getPortalName(item.portal)}</span>
+                <ExternalLink className="w-3 h-3 text-zinc-400" />
+              </a>
+            ))}
+            {uniquePortalLinks.length > 2 && (
+              <span className="text-[11px] text-zinc-500">+{uniquePortalLinks.length - 2}</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
