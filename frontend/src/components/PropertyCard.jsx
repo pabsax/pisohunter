@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, Bookmark, Building, Car, MapPin } from 'lucide-react';
+import { ExternalLink, Bookmark, Building, Car, MapPin, FileText } from 'lucide-react';
 import { getPortalLabel } from '../utils/formatters';
 
 export default function PropertyCard({ 
@@ -116,6 +116,16 @@ export default function PropertyCard({
               </>
             )}
           </div>
+
+          {/* User Notes Preview Badge */}
+          {property.user_notes && (
+            <div className="mt-2.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+              <FileText className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+              <span className="truncate max-w-full font-medium">
+                {property.user_notes}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Footer: Direct Portal Link */}

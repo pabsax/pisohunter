@@ -12,9 +12,12 @@ from datetime import datetime
 
 from models import Property, VisitChecklist, UserCriteria, FinancialBreakdown
 
+from pydantic import BaseModel
+
 from database import (
     init_db, get_all_properties, get_property_by_id, save_property,
-    delete_property, update_property_status, get_visit_checklist,
+    delete_property, update_property_status, update_property_favorite,
+    update_property_notes, sync_cloud_state_to_db, get_visit_checklist,
     save_visit_checklist, get_user_criteria, save_user_criteria,
     recalculate_all_scores, deduplicate_database
 )
@@ -31,10 +34,11 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     try:
+        sync_cloud_state_to_db()
         deduplicate_database()
         recalculate_all_scores()
     except Exception as e:
-        print(f"Startup deduplication warning: {e}")
+        print(f"Startup sync warning: {e}")
     yield
 
 app = FastAPI(
@@ -101,6 +105,40 @@ def change_status(
         raise HTTPException(status_code=404, detail="Inmueble no encontrado")
     update_property_status(property_id, status, discard_reason)
     return {"message": "Estado actualizado", "id": property_id, "new_status": status}
+
+class NotesUpdateRequest(BaseModel):
+    notes: str
+
+@app.patch("/api/properties/{property_id}/notes", response_model=Property)
+def change_property_notes(property_id: str, data: NotesUpdateRequest):
+    prop = get_property_by_id(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Inmueble no encontrado")
+    updated = update_property_notes(property_id, data.notes)
+    return updated
+
+@app.patch("/api/properties/{property_id}/favorite", response_model=Property)
+def change_property_favorite(
+    property_id: str,
+    is_favorite: bool = Query(..., description="Marcar o desmarcar favorito")
+):
+    prop = get_property_by_id(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Inmueble no encontrado")
+    updated = update_property_favorite(property_id, is_favorite)
+    return updated
+
+@app.get("/api/user-data")
+def get_user_data():
+    props = get_all_properties()
+    favorites = [p.id for p in props if p.is_favorite]
+    notes = {p.id: p.user_notes for p in props if p.user_notes}
+    return {
+        "favorites": favorites,
+        "notes": notes,
+        "total_favorites": len(favorites),
+        "total_notes": len(notes)
+    }
 
 @app.delete("/api/properties/{property_id}")
 def remove_property(property_id: str):

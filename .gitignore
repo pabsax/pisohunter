@@ -27,3 +27,4 @@ Icon
 .idea/
 .vercel
 .env*
+backend/user_state.json

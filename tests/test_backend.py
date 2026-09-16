@@ -197,5 +197,33 @@ def test_deduplication_engine():
 
     assert properties_are_duplicates(p1, p2) is True
 
-
-
+def test_favorite_and_user_notes():
+    from database import (
+        save_property, get_property_by_id,
+        update_property_favorite, update_property_notes
+    )
+    test_p = Property(
+        id="test-prop-notes-fav",
+        title="Piso de prueba para notas y favoritos",
+        neighborhood="Centro",
+        price=125000.0,
+        rooms=2,
+        area_m2=75.0,
+        has_elevator=True
+    )
+    save_property(test_p)
+    
+    # 1. Update favorite
+    up_fav = update_property_favorite("test-prop-notes-fav", True)
+    assert up_fav.is_favorite is True
+    
+    # 2. Update notes
+    up_notes = update_property_notes("test-prop-notes-fav", "Preguntar por derramas de tejado")
+    assert up_notes.user_notes == "Preguntar por derramas de tejado"
+    assert up_notes.is_favorite is True
+    
+    # 3. Verify persistent retrieval
+    fetched = get_property_by_id("test-prop-notes-fav")
+    assert fetched is not None
+    assert fetched.is_favorite is True
+    assert fetched.user_notes == "Preguntar por derramas de tejado"

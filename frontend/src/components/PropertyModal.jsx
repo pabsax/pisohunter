@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, ExternalLink, Bookmark, MapPin, Building, 
-  Car, Bed, Bath, Maximize2, Check, AlertCircle 
+  Car, Bed, Bath, Maximize2, Check, AlertCircle, FileText 
 } from 'lucide-react';
 import { getPortalLabel } from '../utils/formatters';
 
@@ -9,9 +9,28 @@ export default function PropertyModal({
   property, 
   onClose, 
   isFavorite, 
-  onToggleFavorite 
+  onToggleFavorite,
+  onUpdateNotes
 }) {
   const [selectedPhoto, setSelectedPhoto] = useState(0);
+  const [notes, setNotes] = useState(property.user_notes || '');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+
+  useEffect(() => {
+    setNotes(property.user_notes || '');
+    setNotesSaved(false);
+  }, [property.id, property.user_notes]);
+
+  const handleSaveNotes = async () => {
+    setIsSavingNotes(true);
+    if (onUpdateNotes) {
+      await onUpdateNotes(property.id, notes);
+    }
+    setIsSavingNotes(false);
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 3000);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -248,6 +267,60 @@ export default function PropertyModal({
               </div>
             </div>
           )}
+
+          {/* Mis Notas Personales */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/50 border border-white/[0.08] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <h4 className="font-semibold text-white text-sm">Mis Notas del Piso</h4>
+              </div>
+              <span className="text-[11px] text-zinc-400">
+                {notesSaved ? (
+                  <span className="text-emerald-400 font-medium flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Guardado online
+                  </span>
+                ) : (
+                  'Sincronizado en la nube'
+                )}
+              </span>
+            </div>
+            
+            <div className="space-y-2">
+              <textarea
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setNotesSaved(false);
+                }}
+                placeholder="Escribe aquí tus observaciones: qué te gustó, dudas para preguntar en la visita, orientación, ruidos, ofertas..."
+                rows={3}
+                className="w-full rounded-xl bg-zinc-950/80 border border-white/10 px-3.5 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition resize-y min-h-[75px]"
+              />
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-zinc-500">
+                  {notes.trim().length > 0 ? `${notes.trim().length} caracteres` : 'Sin notas aún'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSaveNotes}
+                  disabled={isSavingNotes || notes === (property.user_notes || '')}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-zinc-950 font-semibold text-xs transition flex items-center gap-1.5 shadow-sm active:scale-95 touch-manipulation cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSavingNotes ? (
+                    <span>Guardando...</span>
+                  ) : notesSaved ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Guardado</span>
+                    </>
+                  ) : (
+                    <span>Guardar notas</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Description */}
           {property.description && (

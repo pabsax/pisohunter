@@ -69,6 +69,7 @@ def init_db():
             status TEXT DEFAULT 'nuevo',
             discard_reason TEXT,
             user_notes TEXT,
+            is_favorite INTEGER DEFAULT 0,
             score REAL DEFAULT 0.0,
             score_breakdown TEXT,
             financials TEXT,
@@ -76,6 +77,12 @@ def init_db():
             updated_at TEXT
         );
         """)
+
+        # Migración segura para columna is_favorite si la tabla ya existía
+        try:
+            cursor.execute("ALTER TABLE properties ADD COLUMN is_favorite INTEGER DEFAULT 0;")
+        except Exception:
+            pass
         
         # Tabla de checklists de visita
         cursor.execute("""
@@ -150,6 +157,7 @@ def row_to_property(row: sqlite3.Row) -> Property:
     d["has_balcony"] = bool(d["has_balcony"])
     d["has_ac"] = bool(d["has_ac"])
     d["is_exterior"] = bool(d["is_exterior"])
+    d["is_favorite"] = bool(d.get("is_favorite", 0))
     
     if d.get("price_history"):
         d["price_history"] = json.loads(d["price_history"])
@@ -175,7 +183,8 @@ def get_all_properties(
     max_price: Optional[float] = None,
     has_elevator: Optional[bool] = None,
     has_garage: Optional[bool] = None,
-    neighborhood: Optional[str] = None
+    neighborhood: Optional[str] = None,
+    is_favorite: Optional[bool] = None
 ) -> List[Property]:
     query = "SELECT * FROM properties WHERE 1=1"
     params = []
@@ -183,6 +192,9 @@ def get_all_properties(
     if status:
         query += " AND status = ?"
         params.append(status)
+    if is_favorite is not None:
+        query += " AND is_favorite = ?"
+        params.append(1 if is_favorite else 0)
     if min_score is not None:
         query += " AND score >= ?"
         params.append(min_score)
@@ -199,7 +211,7 @@ def get_all_properties(
         query += " AND LOWER(neighborhood) LIKE ?"
         params.append(f"%{neighborhood.lower()}%")
         
-    query += " ORDER BY score DESC, price ASC"
+    query += " ORDER BY is_favorite DESC, score DESC, price ASC"
     
     with get_db() as conn:
         cursor = conn.cursor()
@@ -311,6 +323,8 @@ def deduplicate_database() -> int:
                     # Preservar notas de usuario o estado si p fue interactuado
                     if p.user_notes and not k.user_notes:
                         k.user_notes = p.user_notes
+                    if p.is_favorite and not k.is_favorite:
+                        k.is_favorite = True
                     if p.status in ("guardado", "en_visita", "interesante", "oferta") and k.status == "nuevo":
                         k.status = p.status
                         k.discard_reason = p.discard_reason
@@ -333,6 +347,7 @@ def save_property(prop: Property) -> Property:
     existing = find_duplicate_property(prop)
     if existing:
         prop.id = existing.id
+        prop.is_favorite = existing.is_favorite or prop.is_favorite
         if existing.status in ("guardado", "en_visita", "interesante", "oferta", "descartado"):
             prop.status = existing.status
             prop.discard_reason = existing.discard_reason
@@ -363,14 +378,14 @@ def save_property(prop: Property) -> Property:
             has_elevator, has_garage, has_terrace, has_balcony, has_ac,
             is_exterior, heating_type, condition, community_fee, description,
             photos, contact_phone, agency, status, discard_reason, user_notes,
-            score, score_breakdown, financials, created_at, updated_at
+            is_favorite, score, score_breakdown, financials, created_at, updated_at
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?
         )
         """, (
             prop.id, prop.title, prop.url, prop.source, prop.price, prop.original_price,
@@ -380,7 +395,8 @@ def save_property(prop: Property) -> Property:
             1 if prop.has_terrace else 0, 1 if prop.has_balcony else 0, 1 if prop.has_ac else 0,
             1 if prop.is_exterior else 0, prop.heating_type, prop.condition, prop.community_fee,
             prop.description, json.dumps(prop.photos), prop.contact_phone, prop.agency,
-            prop.status, prop.discard_reason, prop.user_notes, prop.score,
+            prop.status, prop.discard_reason, prop.user_notes,
+            1 if prop.is_favorite else 0, prop.score,
             prop.score_breakdown.model_dump_json() if prop.score_breakdown else None,
             prop.financials.model_dump_json() if prop.financials else None,
             prop.created_at, prop.updated_at
@@ -404,6 +420,78 @@ def update_property_status(property_id: str, status: str, discard_reason: Option
         WHERE id = ?
         """, (status, discard_reason, property_id))
         conn.commit()
+
+def update_property_favorite(property_id: str, is_favorite: bool) -> Optional[Property]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+        UPDATE properties
+        SET is_favorite = ?, updated_at = datetime('now')
+        WHERE id = ?
+        """, (1 if is_favorite else 0, property_id))
+        conn.commit()
+    
+    # Sincronizar en la nube
+    try:
+        from cloud_sync import update_cloud_property_state
+        update_cloud_property_state(property_id, is_favorite=is_favorite)
+    except Exception as e:
+        print(f"[DB] Notice: cloud sync favorite error: {e}")
+
+    return get_property_by_id(property_id)
+
+def update_property_notes(property_id: str, notes: str) -> Optional[Property]:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+        UPDATE properties
+        SET user_notes = ?, updated_at = datetime('now')
+        WHERE id = ?
+        """, (notes, property_id))
+        conn.commit()
+    
+    # Sincronizar en la nube
+    try:
+        from cloud_sync import update_cloud_property_state
+        update_cloud_property_state(property_id, user_notes=notes)
+    except Exception as e:
+        print(f"[DB] Notice: cloud sync notes error: {e}")
+
+    return get_property_by_id(property_id)
+
+def sync_cloud_state_to_db() -> int:
+    """
+    Sincroniza notas y favoritos desde Vercel Blob hacia SQLite local.
+    """
+    try:
+        from cloud_sync import load_cloud_user_state
+        cloud_state = load_cloud_user_state()
+        if not cloud_state:
+            return 0
+        
+        updated_count = 0
+        with get_db() as conn:
+            cursor = conn.cursor()
+            for prop_id, state in cloud_state.items():
+                is_fav = state.get("is_favorite")
+                notes = state.get("user_notes")
+                if is_fav is not None or notes is not None:
+                    cursor.execute("SELECT id, is_favorite, user_notes FROM properties WHERE id = ?", (prop_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        new_fav = (1 if is_fav else 0) if is_fav is not None else row["is_favorite"]
+                        new_notes = notes if notes is not None else row["user_notes"]
+                        cursor.execute("""
+                        UPDATE properties
+                        SET is_favorite = ?, user_notes = ?, updated_at = datetime('now')
+                        WHERE id = ?
+                        """, (new_fav, new_notes, prop_id))
+                        updated_count += 1
+            conn.commit()
+        return updated_count
+    except Exception as e:
+        print(f"[DB] Warning: sync_cloud_state_to_db failed: {e}")
+        return 0
 
 def get_visit_checklist(property_id: str) -> Optional[VisitChecklist]:
     with get_db() as conn:

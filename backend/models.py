@@ -102,6 +102,7 @@ class Property(BaseModel):
     status: str = "nuevo"  # nuevo, interesante, contactado, visita_agendada, visitado, oferta, descartado
     discard_reason: Optional[str] = None
     user_notes: Optional[str] = None
+    is_favorite: bool = False
     score: float = 0.0
     score_breakdown: Optional[ScoreBreakdown] = None
     financials: Optional[FinancialBreakdown] = None

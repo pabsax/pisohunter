@@ -57,14 +57,59 @@ export default function App() {
     setTimeout(() => setToastMessage(''), 3000);
   };
 
-  const toggleFavorite = (propertyId) => {
+  const toggleFavorite = async (propertyId) => {
+    const isFavNow = favorites.includes(propertyId);
+    const nextFav = !isFavNow;
+
     setFavorites(prev => {
-      const next = prev.includes(propertyId)
-        ? prev.filter(id => id !== propertyId)
-        : [...prev, propertyId];
+      const next = nextFav
+        ? [...prev, propertyId]
+        : prev.filter(id => id !== propertyId);
       localStorage.setItem('pisohunter_favs', JSON.stringify(next));
       return next;
     });
+
+    setProperties(prev =>
+      prev.map(p => p.id === propertyId ? { ...p, is_favorite: nextFav } : p)
+    );
+
+    if (selectedProperty && selectedProperty.id === propertyId) {
+      setSelectedProperty(prev => ({ ...prev, is_favorite: nextFav }));
+    }
+
+    showToast(nextFav ? 'Guardado en favoritos (online)' : 'Eliminado de guardados');
+
+    try {
+      await fetch(`/api/properties/${propertyId}/favorite?is_favorite=${nextFav}`, {
+        method: 'PATCH'
+      });
+    } catch (err) {
+      console.error('Error toggling favorite online:', err);
+    }
+  };
+
+  const handleUpdateNotes = async (propertyId, notes) => {
+    setProperties(prev =>
+      prev.map(p => p.id === propertyId ? { ...p, user_notes: notes } : p)
+    );
+
+    if (selectedProperty && selectedProperty.id === propertyId) {
+      setSelectedProperty(prev => ({ ...prev, user_notes: notes }));
+    }
+
+    showToast('Notas guardadas online');
+
+    try {
+      const res = await fetch(`/api/properties/${propertyId}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Error saving notes online:', err);
+      return false;
+    }
   };
 
   const fetchProperties = async (silent = false) => {
@@ -73,6 +118,15 @@ export default function App() {
       const res = await fetch('/api/properties');
       const data = await res.json();
       setProperties(data);
+
+      // Sincronizar favoritos desde el servidor online
+      const serverFavs = data.filter(p => p.is_favorite).map(p => p.id);
+      setFavorites(prev => {
+        const merged = Array.from(new Set([...prev, ...serverFavs]));
+        localStorage.setItem('pisohunter_favs', JSON.stringify(merged));
+        return merged;
+      });
+
       const now = new Date();
       const timeStr = now.toLocaleDateString('es-ES', {
         day: 'numeric',
@@ -366,6 +420,7 @@ export default function App() {
           onClose={() => setSelectedProperty(null)}
           isFavorite={favorites.includes(selectedProperty.id)}
           onToggleFavorite={toggleFavorite}
+          onUpdateNotes={handleUpdateNotes}
         />
       )}
 
